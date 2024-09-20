@@ -1,0 +1,110 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2761
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 import json\
+import boto3\
+from statistics import mean\
+from decimal import Decimal\
+from datetime import datetime\
+\
+iot_data = boto3.client('iot', region_name='us-east-1')\
+dynamodb = boto3.resource('dynamodb', region_name='us-east-1')\
+cloudwatch = boto3.client('cloudwatch', region_name='us-east-1')\
+\
+table_name = 'Mean_Output'\
+table = dynamodb.Table(table_name)\
+\
+sns = boto3.client('sns', region_name='us-east-1')\
+\
+topic_arn = 'arn:aws:sns:us-east-1:339713093591:mytopic'\
+\
+def lambda_handler(event, context):\
+    for record in event['records']:\
+        \
+        passi_effettuati = record['PassiEffettuati']  if 'PassiEffettuati' in record else None \
+        kcal_consumate = record['KcalConsumate'] if 'KcalConsumate' in record else None\
+        battito_cardiaco = record['BattitoCardiaco'] if 'BattitoCardiaco' in record else None\
+        pressione_sistolica = record['PressioneSistolica'] if 'PressioneSistolica' in record else None\
+        pressione_diastolica = record['PressioneDiastolica'] if 'PressioneDiastolica' in record else None\
+        allarme = record['Allarme'] if 'Allarme' in record else None\
+       \
+        now = datetime.now()\
+        timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")\
+\
+        table.put_item(\
+            Item=\{\
+                'id': timestamp_str,\
+                'passi_effettuati': Decimal(passi_effettuati) if isinstance(passi_effettuati, float) else passi_effettuati,\
+                'kcal_consumate': Decimal(kcal_consumate) if isinstance(kcal_consumate, float) else kcal_consumate,\
+                'battito_cardiaco': Decimal(battito_cardiaco) if isinstance(battito_cardiaco, float) else battito_cardiaco,\
+                'pressione_sistolica': Decimal(pressione_sistolica) if isinstance(pressione_sistolica, float) else pressione_sistolica,\
+                'pressione_diastolica': Decimal(pressione_diastolica) if isinstance(pressione_diastolica, float) else pressione_diastolica,\
+                'allarme': allarme\
+                \
+            \}\
+            \
+        )\
+\
+        if pressione_sistolica is not None and pressione_diastolica is not None:\
+            if 140 <= pressione_sistolica <= 159 or 90 <= pressione_diastolica <= 99:\
+                sns.publish(\
+                    TopicArn=topic_arn,\
+                    Message='Attenzione! Ipertensione di Grado 1'\
+                )\
+\
+            elif 160 <= pressione_sistolica <= 179 or 100 <= pressione_diastolica <= 109:\
+                sns.publish(\
+                    TopicArn=topic_arn,\
+                    Message='Attenzione! Ipertensione di Grado 2'\
+                )\
+\
+            elif pressione_sistolica >= 180 or pressione_diastolica >= 110:\
+                sns.publish(\
+                    TopicArn=topic_arn,\
+                    Message='Attenzione! Ipertensione di Grado 3'\
+                )\
+\
+            elif pressione_sistolica >= 140 and pressione_diastolica < 90:\
+                sns.publish(\
+                    TopicArn=topic_arn,\
+                    Message='Attenzione! Ipertensione sistolica isolata'\
+                )\
+\
+            elif pressione_sistolica < 140 and pressione_diastolica >= 90:\
+                sns.publish(\
+                    TopicArn=topic_arn,\
+                    Message='Attenzione! Ipertensione diastolica isolata'\
+                )\
+                \
+        if allarme is not None:\
+            if allarme == 'Probabile Tachicardia':\
+                sns.publish(\
+                    TopicArn=topic_arn,\
+                    Message='Attenzione! Pericolo tachicardia'\
+                )\
+\
+            elif allarme == 'Probabile Brachicardia':\
+                sns.publish(\
+                    TopicArn=topic_arn,\
+                    Message='Attenzione! Pericolo Brachicardia'\
+                )\
+                \
+            elif allarme == 'Probabile Aritmia':\
+                sns.publish(\
+                    TopicArn=topic_arn,\
+                    Message='Attenzione! Pericolo Aritmia'\
+                )\
+\
+    return \{\
+        'passi_effettuati': passi_effettuati,\
+        'kcal_consumate': kcal_consumate,\
+        'battito_cardiaco': battito_cardiaco,\
+        'pressione_sistolica': pressione_sistolica,\
+        'pressione_diastolica': pressione_diastolica,\
+        'allarme': allarme\
+    \}\
+}
